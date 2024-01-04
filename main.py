@@ -109,6 +109,21 @@ class ImageRemoveBackground:
 
 
 def removeBackground(image: Image.Image, bg="WHITE") -> Image.Image:
+    # check image first line is white
+    width, height = image.size
+    firstline = [image.getpixel((i, 0)) for i in range(width)]
+
+    if all([i[0] > 240 and i[1] > 240 and i[2] > 240 for i in firstline]):
+        image_ = image.convert("RGBA")
+        data = numpy.array(image_)
+        red, green, blue, alpha = data.T
+        white_areas = (red > 240) & (green > 240) & (blue > 240)
+        data[..., :-1][white_areas.T] = (255, 255, 255)
+        image_ = Image.fromarray(data)
+        upperBound = find_upper_bound(image_)
+        
+        return image, upperBound
+
     global imageRemoveBackground
     if imageRemoveBackground is None:
         imageRemoveBackground = ImageRemoveBackground()
@@ -122,9 +137,10 @@ def removeBackground(image: Image.Image, bg="WHITE") -> Image.Image:
 
 
 def centerAvatar(
-    image: Image.Image, cropSize=(400, 500), upperBound=0, hScale=1.8, wScale=1.2
+    image: Image.Image, cropSize=(264, 330), upperBound=0, hScale=1.8, wScale=1.2
 ) -> Image.Image:
     width, height = image.size
+    upperBound = int(upperBound)
     # using cv2 recognize face and points
     image = numpy.array(image)
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -145,11 +161,11 @@ def centerAvatar(
     h = int(h * hScale)
     w = int(w * wScale)
 
-    if y - h // 2 < upperBound:
-        h = y * 2 - upperBound
-
+    if y - h // 2 > upperBound:
+        y = upperBound + h // 2
+    print(f"upperBound: {(width, upperBound)}")
     # Show upperBound
-    cv2.line(cvImage, (0, upperBound), (cvImage.shape[0], upperBound), (0, 0, 255), 4)
+    cv2.line(cvImage, (0, upperBound), (width, upperBound), (0, 0, 255), 4)
     # Show Bounding Box and Center
     cv2.rectangle(
         cvImage, (x - w // 2, y - h // 2), (x + w // 2, y + h // 2), (0, 255, 0), 4
@@ -162,6 +178,7 @@ def centerAvatar(
     fit = cropSize[0] / cropSize[1]
     if w / h > fit:
         # width is longer
+
         h = int(w / fit)
     else:
         # height is longer
@@ -182,7 +199,7 @@ def centerAvatar(
 
 directory = "./Photos"
 output_dir = "./Converted"
-extension = ".jpg"
+extension = "jpg"
 window = Window()
 
 
