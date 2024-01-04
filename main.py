@@ -29,7 +29,7 @@ class Window:
         cv2.resizeWindow("AutoIDPhotoTools", 500, 600)
         self.image = numpy.zeros((800, 600, 3), dtype=numpy.uint8)
         self.title = ""
-        self.changed = True
+        self.pause = False
 
     def show(self, image, title=""):
         if isinstance(image, Image.Image):
@@ -41,7 +41,7 @@ class Window:
             raise TypeError("image must be a PIL.Image.Image or numpy.ndarray")
         self.image = image
         self.title = title
-        self.changed = True
+        self.update()
 
     def update(self):
         image = self.image.copy()
@@ -78,16 +78,12 @@ class Window:
         if key == ord("q"):
             exit()
 
-    def waitForUpdated(self):
-        self.update()
-
     def run(self):
         while True:
             self.update()
-            if self.changed:
-                self.update()
-                self.waitKey(1000)
-                self.changed = False
+            if self.pause:
+                cv2.waitKey(0)
+                self.pause = False
 
 
 class ImageRemoveBackground:
@@ -118,7 +114,7 @@ def removeBackground(image: Image.Image, bg="WHITE") -> Image.Image:
 
 
 def centerAvatar(
-    image: Image.Image, cropSize=(264, 330), upperBound=0, hScale=1.95, wScale=1.2
+    image: Image.Image, cropSize=(264, 330), upperBound=0, hScale=1.9, wScale=1.4
 ) -> Image.Image:
     width, height = image.size
     upperBound = int(upperBound)
@@ -127,6 +123,9 @@ def centerAvatar(
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_alt2.xml")
     blur = cv2.GaussianBlur(image, (1, 1), 0)
+    blur = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
+    blur[:, :, 1] = blur[:, :, 1] * 0.6
+    blur = cv2.cvtColor(blur, cv2.COLOR_HSV2BGR)
     faces = face_cascade.detectMultiScale(blur, 1.1, 4)
     if len(faces) == 0:
         print("No face detected!")
@@ -142,7 +141,12 @@ def centerAvatar(
         )
         image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         return image
-    x, y, w, h = faces[0]
+
+    # nearest center face
+    centerX, centerY = width // 2, height // 2
+    distance = [(x + w // 2 - centerX) ** 2 + (y + h // 2 - centerY) ** 2 for x, y, w, h in faces]
+    index = distance.index(min(distance))
+    x, y, w, h = faces[index]
     # Show Bounding Box
     cvImage = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     cv2.rectangle(cvImage, (x, y), (x + w, y + h), (255, 0, 0), 4)
@@ -151,18 +155,16 @@ def centerAvatar(
     y = y + h // 2
     h = int(h * hScale)
     w = int(w * wScale)
+    cv2.circle(cvImage, (x, y), 2, (255, 255, 0), 10)
 
-    if y - h // 2 > upperBound:
-        y = upperBound + h // 2
+    y = upperBound + h // 2
     # Show upperBound
     cv2.line(cvImage, (0, upperBound), (width, upperBound), (0, 0, 255), 4)
     # Show Bounding Box and Center
     cv2.rectangle(cvImage, (x - w // 2, y - h // 2), (x + w // 2, y + h // 2), (0, 255, 0), 4)
     cv2.circle(cvImage, (x, y), 2, (0, 255, 0), 10)
     window.show(cvImage, "Face Detected!")
-    window.waitForUpdated()
-    time.sleep(1)
-
+    time.sleep(2)
     # fit h and w to cropSize
     fit = cropSize[0] / cropSize[1]
     if w / h > fit:
@@ -189,6 +191,7 @@ def centerAvatar(
 directory = "./Photos"
 output_dir = "./Converted"
 extension = "jpg"
+SkipConverted = True
 window = Window()
 global imageRemoveBackground
 imageRemoveBackground = ImageRemoveBackground()
@@ -198,31 +201,34 @@ def main():
     time.sleep(1)
     for root, dirs, files in os.walk(directory):
         for file in files:
-            image = Image.open(os.path.join(root, file))
-            print(F"Processing {file}... Image size: {image.size}")
-            print("Removing background...")
-            window.show(image, "Background Removing...")
-            window.waitForUpdated()
-            # Remove the background and white background
-            image, upperBound = removeBackground(image, "WHITE")
-            window.show(image, "Background Removed!")
-            window.waitForUpdated()
-            print("Background Removed!")
-
-            print("Centering avatar...")
-            # Center the avatar
-            window.show(image, "Centering Avatar")
-            image = centerAvatar(image, upperBound=upperBound * 0.9)
-            window.show(image, "Avatar Centered!")
-            window.waitForUpdated()
-            print("Avatar Centered!")
-
-            # Save the image
             output_file = os.path.join(output_dir, root.split("\\")[-1], file)
             temp = output_file.split(".")
             temp[-1] = extension
             output_file = ".".join(temp)
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            # if file in converted folder, skip
+            if os.path.isfile(output_file) and SkipConverted:
+                print(F"Skipped {file}...")
+                continue
+
+            image = Image.open(os.path.join(root, file))
+            print(F"Processing {file}... Image size: {image.size}")
+            print("Removing background...")
+            window.show(image, "Background Removing...")
+            # Remove the background and white background
+            image, upperBound = removeBackground(image, "WHITE")
+            window.show(image, "Background Removed!")
+            print("Background Removed!")
+
+            print("Centering avatar...")
+            # Center the avatar
+            window.show(image, "Centering Avatar")
+
+            image = centerAvatar(image, upperBound=upperBound - image.size[1] // 50)
+            window.show(image, "Avatar Centered!")
+            print("Avatar Centered!")
+
+            # Save the image
             image.convert("RGB").save(output_file)
             print(F"Saved to {output_file} Image size: {image.size}\n")
     exit()
