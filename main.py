@@ -26,8 +26,9 @@ else:
 class Window:
     def __init__(self):
         cv2.namedWindow("AutoIDPhotoTools", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("AutoIDPhotoTools", 500, 600)
+        cv2.resizeWindow("AutoIDPhotoTools", 1000, 600)
         self.image = numpy.zeros((800, 600, 3), dtype=numpy.uint8)
+        self.image2 = numpy.zeros((800, 600, 3), dtype=numpy.uint8)
         self.title = ""
         self.pause = False
 
@@ -61,6 +62,25 @@ class Window:
         x = (windowImage.shape[1] - image.shape[1]) // 2
         y = (windowImage.shape[0] - image.shape[0]) // 2
         windowImage[y : y + image.shape[0], x : x + image.shape[1]] = image
+
+        image2 = self.image2.copy()
+        windowImage2 = numpy.zeros((800, 600, 3), dtype=numpy.uint8)
+        # Resize image to fit window but keep aspect ratio
+        fit = windowImage2.shape[1] / windowImage2.shape[0]
+        if image2.shape[1] / image2.shape[0] > fit:
+            # width is longer
+            scale = windowImage2.shape[1] / image2.shape[1]
+            image2 = cv2.resize(image2, (0, 0), fx=scale, fy=scale)
+        else:
+            # height is longer
+            scale = windowImage2.shape[0] / image2.shape[0]
+            image2 = cv2.resize(image2, (0, 0), fx=scale, fy=scale)
+
+        # psate on windowImage align center
+        x = (windowImage2.shape[1] - image2.shape[1]) // 2
+        y = (windowImage2.shape[0] - image2.shape[0]) // 2
+        windowImage2[y : y + image2.shape[0], x : x + image2.shape[1]] = image2
+
         cv2.putText(
             windowImage,
             self.title,
@@ -70,7 +90,9 @@ class Window:
             (0, 0, 255),
             2,
         )
-        cv2.imshow("AutoIDPhotoTools", windowImage)
+        border = numpy.zeros((windowImage.shape[0], 10, 3), dtype=numpy.uint8)
+        out = cv2.hconcat([windowImage, border, windowImage2])
+        cv2.imshow("AutoIDPhotoTools", out)
         self.waitKey(1)
 
     def waitKey(self, delay=0):
@@ -164,12 +186,11 @@ def centerAvatar(
     cv2.rectangle(cvImage, (x - w // 2, y - h // 2), (x + w // 2, y + h // 2), (0, 255, 0), 4)
     cv2.circle(cvImage, (x, y), 2, (0, 255, 0), 10)
     window.show(cvImage, "Face Detected!")
-    time.sleep(2)
+    time.sleep(0.1)
     # fit h and w to cropSize
     fit = cropSize[0] / cropSize[1]
     if w / h > fit:
         # width is longer
-
         h = int(w / fit)
     else:
         # height is longer
@@ -191,7 +212,7 @@ def centerAvatar(
 directory = "./Photos"
 output_dir = "./Converted"
 extension = "jpg"
-SkipConverted = True
+SkipConverted = False
 window = Window()
 global imageRemoveBackground
 imageRemoveBackground = ImageRemoveBackground()
@@ -229,8 +250,10 @@ def main():
             print("Avatar Centered!")
 
             # Save the image
+            window.image2 = cv2.cvtColor(numpy.array(image), cv2.COLOR_RGB2BGR)
             image.convert("RGB").save(output_file)
             print(F"Saved to {output_file} Image size: {image.size}\n")
+    print("Done!")
     exit()
 
 
