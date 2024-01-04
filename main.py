@@ -22,9 +22,6 @@ if torch.cuda.is_available():
 else:
     device = "cpu"
 
-global imageRemoveBackground
-imageRemoveBackground = None
-
 
 class Window:
     def __init__(self):
@@ -81,6 +78,9 @@ class Window:
         if key == ord("q"):
             exit()
 
+    def waitForUpdated(self):
+        self.update()
+
     def run(self):
         while True:
             self.update()
@@ -94,9 +94,7 @@ class ImageRemoveBackground:
     def __init__(self):
         self.seg_net = TracerUniversalB7(device=device, batch_size=1)
         self.fba = FBAMatting(device=device, input_tensor_size=1024, batch_size=1)
-        self.trimap = TrimapGenerator(
-            prob_threshold=231, kernel_size=30, erosion_iters=2
-        )
+        self.trimap = TrimapGenerator(prob_threshold=231, kernel_size=30, erosion_iters=2)
         self.preprocessing = PreprocessingStub()
         self.postprocessing = MattingMethod(
             matting_module=self.fba, trimap_generator=self.trimap, device=device
@@ -109,24 +107,7 @@ class ImageRemoveBackground:
 
 
 def removeBackground(image: Image.Image, bg="WHITE") -> Image.Image:
-    # check image first line is white
-    width, height = image.size
-    firstline = [image.getpixel((i, 0)) for i in range(width)]
-
-    if all([i[0] > 240 and i[1] > 240 and i[2] > 240 for i in firstline]):
-        image_ = image.convert("RGBA")
-        data = numpy.array(image_)
-        red, green, blue, alpha = data.T
-        white_areas = (red > 240) & (green > 240) & (blue > 240)
-        data[..., :-1][white_areas.T] = (255, 255, 255)
-        image_ = Image.fromarray(data)
-        upperBound = find_upper_bound(image_)
-        
-        return image, upperBound
-
     global imageRemoveBackground
-    if imageRemoveBackground is None:
-        imageRemoveBackground = ImageRemoveBackground()
     image_ = imageRemoveBackground.interface([image])[0]
     upperBound = find_upper_bound(image_)
 
@@ -137,18 +118,28 @@ def removeBackground(image: Image.Image, bg="WHITE") -> Image.Image:
 
 
 def centerAvatar(
-    image: Image.Image, cropSize=(264, 330), upperBound=0, hScale=1.8, wScale=1.2
+    image: Image.Image, cropSize=(264, 330), upperBound=0, hScale=1.95, wScale=1.2
 ) -> Image.Image:
     width, height = image.size
     upperBound = int(upperBound)
     # using cv2 recognize face and points
     image = numpy.array(image)
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-    face_cascade = cv2.CascadeClassifier(
-        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-    )
-    faces = face_cascade.detectMultiScale(image, 1.1, 4)
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_alt2.xml")
+    blur = cv2.GaussianBlur(image, (1, 1), 0)
+    faces = face_cascade.detectMultiScale(blur, 1.1, 4)
     if len(faces) == 0:
+        print("No face detected!")
+        image = numpy.zeros((cropSize[1], cropSize[0], 3), dtype=numpy.uint8)
+        cv2.putText(
+            image,
+            "No face detected!",
+            (10, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 0, 255),
+            2,
+        )
         image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         return image
     x, y, w, h = faces[0]
@@ -163,16 +154,14 @@ def centerAvatar(
 
     if y - h // 2 > upperBound:
         y = upperBound + h // 2
-    print(f"upperBound: {(width, upperBound)}")
     # Show upperBound
     cv2.line(cvImage, (0, upperBound), (width, upperBound), (0, 0, 255), 4)
     # Show Bounding Box and Center
-    cv2.rectangle(
-        cvImage, (x - w // 2, y - h // 2), (x + w // 2, y + h // 2), (0, 255, 0), 4
-    )
+    cv2.rectangle(cvImage, (x - w // 2, y - h // 2), (x + w // 2, y + h // 2), (0, 255, 0), 4)
     cv2.circle(cvImage, (x, y), 2, (0, 255, 0), 10)
     window.show(cvImage, "Face Detected!")
-    time.sleep(2)
+    window.waitForUpdated()
+    time.sleep(1)
 
     # fit h and w to cropSize
     fit = cropSize[0] / cropSize[1]
@@ -201,6 +190,8 @@ directory = "./Photos"
 output_dir = "./Converted"
 extension = "jpg"
 window = Window()
+global imageRemoveBackground
+imageRemoveBackground = ImageRemoveBackground()
 
 
 def main():
@@ -208,16 +199,23 @@ def main():
     for root, dirs, files in os.walk(directory):
         for file in files:
             image = Image.open(os.path.join(root, file))
+            print(F"Processing {file}... Image size: {image.size}")
+            print("Removing background...")
             window.show(image, "Background Removing...")
+            window.waitForUpdated()
             # Remove the background and white background
             image, upperBound = removeBackground(image, "WHITE")
             window.show(image, "Background Removed!")
+            window.waitForUpdated()
+            print("Background Removed!")
 
+            print("Centering avatar...")
             # Center the avatar
             window.show(image, "Centering Avatar")
             image = centerAvatar(image, upperBound=upperBound * 0.9)
             window.show(image, "Avatar Centered!")
-            time.sleep(0.5)
+            window.waitForUpdated()
+            print("Avatar Centered!")
 
             # Save the image
             output_file = os.path.join(output_dir, root.split("\\")[-1], file)
@@ -226,6 +224,8 @@ def main():
             output_file = ".".join(temp)
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
             image.convert("RGB").save(output_file)
+            print(F"Saved to {output_file} Image size: {image.size}\n")
+    exit()
 
 
 threading.Thread(target=main).start()
