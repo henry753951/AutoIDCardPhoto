@@ -4,6 +4,7 @@ from PIL import ImageDraw
 from carvekit.api.interface import Interface
 from carvekit.ml.wrap.fba_matting import FBAMatting
 from carvekit.ml.wrap.tracer_b7 import TracerUniversalB7
+from carvekit.ml.wrap.deeplab_v3 import DeepLabV3
 from carvekit.pipelines.postprocessing import MattingMethod
 from carvekit.pipelines.preprocessing import PreprocessingStub
 from carvekit.trimap.generator import TrimapGenerator
@@ -110,9 +111,11 @@ class Window:
 
 class ImageRemoveBackground:
     def __init__(self):
-        self.seg_net = TracerUniversalB7(device=device, batch_size=1)
-        self.fba = FBAMatting(device=device, input_tensor_size=1024, batch_size=1)
-        self.trimap = TrimapGenerator(prob_threshold=231, kernel_size=30, erosion_iters=2)
+        self.seg_net = DeepLabV3(device=device, batch_size=3)
+        self.fba = FBAMatting(device=device, input_tensor_size=2048, batch_size=1)
+        self.trimap = TrimapGenerator(
+            prob_threshold=231, kernel_size=30, erosion_iters=2
+        )
         self.preprocessing = PreprocessingStub()
         self.postprocessing = MattingMethod(
             matting_module=self.fba, trimap_generator=self.trimap, device=device
@@ -143,7 +146,9 @@ def centerAvatar(
     # using cv2 recognize face and points
     image = numpy.array(image)
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_alt2.xml")
+    face_cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_alt2.xml"
+    )
     blur = cv2.GaussianBlur(image, (1, 1), 0)
     blur = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
     blur[:, :, 1] = blur[:, :, 1] * 0.6
@@ -166,7 +171,10 @@ def centerAvatar(
 
     # nearest center face
     centerX, centerY = width // 2, height // 2
-    distance = [(x + w // 2 - centerX) ** 2 + (y + h // 2 - centerY) ** 2 for x, y, w, h in faces]
+    distance = [
+        (x + w // 2 - centerX) ** 2 + (y + h // 2 - centerY) ** 2
+        for x, y, w, h in faces
+    ]
     index = distance.index(min(distance))
     x, y, w, h = faces[index]
     # Show Bounding Box
@@ -183,10 +191,11 @@ def centerAvatar(
     # Show upperBound
     cv2.line(cvImage, (0, upperBound), (width, upperBound), (0, 0, 255), 4)
     # Show Bounding Box and Center
-    cv2.rectangle(cvImage, (x - w // 2, y - h // 2), (x + w // 2, y + h // 2), (0, 255, 0), 4)
+    cv2.rectangle(
+        cvImage, (x - w // 2, y - h // 2), (x + w // 2, y + h // 2), (0, 255, 0), 4
+    )
     cv2.circle(cvImage, (x, y), 2, (0, 255, 0), 10)
     window.show(cvImage, "Face Detected!")
-    time.sleep(0.1)
     # fit h and w to cropSize
     fit = cropSize[0] / cropSize[1]
     if w / h > fit:
@@ -229,30 +238,34 @@ def main():
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
             # if file in converted folder, skip
             if os.path.isfile(output_file) and SkipConverted:
-                print(F"Skipped {file}...")
+                print(f"Skipped {file}...")
                 continue
 
             image = Image.open(os.path.join(root, file))
-            print(F"Processing {file}... Image size: {image.size}")
+            print(f"Processing {file}... Image size: {image.size}")
             print("Removing background...")
             window.show(image, "Background Removing...")
             # Remove the background and white background
+            unrmbg_image = image.copy()
             image, upperBound = removeBackground(image, "WHITE")
             window.show(image, "Background Removed!")
             print("Background Removed!")
+            
+            if file.split(".")[0].endswith("!"):
+                image = unrmbg_image
+            if not file.split(".")[0].endswith("@"):
+                print("Centering avatar...")
+                # Center the avatar
+                window.show(image, "Centering Avatar")
 
-            print("Centering avatar...")
-            # Center the avatar
-            window.show(image, "Centering Avatar")
-
-            image = centerAvatar(image, upperBound=upperBound - image.size[1] // 50)
-            window.show(image, "Avatar Centered!")
-            print("Avatar Centered!")
+                image = centerAvatar(image, upperBound=upperBound - image.size[1] // 50)
+                window.show(image, "Avatar Centered!")
+                print("Avatar Centered!")
 
             # Save the image
             window.image2 = cv2.cvtColor(numpy.array(image), cv2.COLOR_RGB2BGR)
             image.convert("RGB").save(output_file)
-            print(F"Saved to {output_file} Image size: {image.size}\n")
+            print(f"Saved to {output_file} Image size: {image.size}\n")
     print("Done!")
     exit()
 
