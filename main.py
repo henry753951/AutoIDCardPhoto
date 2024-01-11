@@ -32,6 +32,7 @@ class Window:
         self.image2 = numpy.zeros((800, 600, 3), dtype=numpy.uint8)
         self.title = ""
         self.pause = False
+        self.exit_flag = False
 
     def show(self, image, title=""):
         if isinstance(image, Image.Image):
@@ -98,7 +99,7 @@ class Window:
 
     def waitKey(self, delay=0):
         key = cv2.waitKey(delay) & 0xFF
-        if key == ord("q"):
+        if key == ord("q") or self.exit_flag:
             exit()
 
     def run(self):
@@ -111,10 +112,10 @@ class Window:
 
 class ImageRemoveBackground:
     def __init__(self):
-        self.seg_net = U2NET(device=device, batch_size=5)
-        self.fba = FBAMatting(device=device, input_tensor_size=1024, batch_size=1)
+        self.seg_net = U2NET(device=device, batch_size=10)
+        self.fba = FBAMatting(device=device, input_tensor_size=2048, batch_size=1)
         self.trimap = TrimapGenerator(
-            prob_threshold=231, kernel_size=30, erosion_iters=1
+            prob_threshold=231, kernel_size=30, erosion_iters=5
         )
         self.preprocessing = PreprocessingStub()
         self.postprocessing = MattingMethod(
@@ -129,6 +130,10 @@ class ImageRemoveBackground:
 
 def removeBackground(image: Image.Image, bg="WHITE") -> Image.Image:
     global imageRemoveBackground
+    # resize width to 800
+    width, height = image.size
+    scale = 800 / width
+    image = image.resize((800, int(height * scale)))
     image_ = imageRemoveBackground.interface([image])[0]
     upperBound = find_upper_bound(image_)
 
@@ -139,7 +144,7 @@ def removeBackground(image: Image.Image, bg="WHITE") -> Image.Image:
 
 
 def centerAvatar(
-    image: Image.Image, cropSize=(264, 330), upperBound=0, hScale=1.9, wScale=1.4
+    image: Image.Image, cropSize=(264, 330), upperBound=0, hScale=2.0, wScale=1.4
 ) -> Image.Image:
     width, height = image.size
     upperBound = int(upperBound)
@@ -260,6 +265,7 @@ def main():
 
                 image = centerAvatar(image, upperBound=upperBound - image.size[1] // 50)
                 window.show(image, "Avatar Centered!")
+                time.sleep(0.1)
                 print("Avatar Centered!")
 
             # Save the image
@@ -267,6 +273,7 @@ def main():
             image.convert("RGB").save(output_file)
             print(f"Saved to {output_file} Image size: {image.size}\n")
     print("Done!")
+    window.exit_flag = True
     exit()
 
 
