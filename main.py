@@ -4,7 +4,7 @@ from PIL import ImageDraw
 from carvekit.api.interface import Interface
 from carvekit.ml.wrap.fba_matting import FBAMatting
 from carvekit.ml.wrap.tracer_b7 import TracerUniversalB7
-from carvekit.ml.wrap.deeplab_v3 import DeepLabV3
+from carvekit.ml.wrap.u2net import U2NET
 from carvekit.pipelines.postprocessing import MattingMethod
 from carvekit.pipelines.preprocessing import PreprocessingStub
 from carvekit.trimap.generator import TrimapGenerator
@@ -111,10 +111,10 @@ class Window:
 
 class ImageRemoveBackground:
     def __init__(self):
-        self.seg_net = DeepLabV3(device=device, batch_size=3)
-        self.fba = FBAMatting(device=device, input_tensor_size=2048, batch_size=1)
+        self.seg_net = U2NET(device=device, batch_size=5)
+        self.fba = FBAMatting(device=device, input_tensor_size=1024, batch_size=1)
         self.trimap = TrimapGenerator(
-            prob_threshold=231, kernel_size=30, erosion_iters=2
+            prob_threshold=231, kernel_size=30, erosion_iters=1
         )
         self.preprocessing = PreprocessingStub()
         self.postprocessing = MattingMethod(
